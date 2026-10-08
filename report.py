@@ -27,15 +27,20 @@ STATUS_NOTES = {
     "failed": "assessment belum lulus",
     "no_attempts": "tidak ada sisa attempt",
     "no_llm": "butuh konfigurasi LLM",
-    "manual": "perlu tindakan manual (belum didukung)",
+    "manual": "perlu tindakan manual (opsional/tidak dinilai)",
     "manual_graded": "perlu tindakan manual — MENGHITUNG NILAI",
     "error": "gagal diproses",
     "already": "sudah selesai sebelumnya",
 }
 
+# Items that still need work (must be resumed / redone).
+RESUME_STATUSES = {"failed", "error", "no_llm", "no_attempts", "manual", "manual_graded"}
+# Items that are finished (safe to skip on the next run).
+DONE_STATUSES = {"skipped", "watched", "read", "passed", "already"}
+
 
 class CourseReport(object):
-    """Collects per-item outcomes and renders a course completion summary."""
+    """Collects per-item outcomes and renders a course completion summary/checklist."""
 
     def __init__(self, course: str, course_id: str = "", course_name: str = ""):
         self.course = course
@@ -44,16 +49,23 @@ class CourseReport(object):
         self.started_at = datetime.now()
         self.entries = []
 
-    def add(self, name: str, item_type: str, status: str, detail: str = "") -> None:
+    def add(self, name: str, item_type: str, status: str, detail: str = "", url: str = "") -> None:
         self.entries.append({
             "name": name,
             "type": item_type,
             "status": status,
             "detail": detail,
+            "url": url,
         })
 
     def counts(self) -> Counter:
         return Counter(entry["status"] for entry in self.entries)
+
+    def resume_entries(self) -> list:
+        return [e for e in self.entries if e["status"] in RESUME_STATUSES]
+
+    def done_entries(self) -> list:
+        return [e for e in self.entries if e["status"] in DONE_STATUSES]
 
     def render(self) -> str:
         lines = []
@@ -71,9 +83,35 @@ class CourseReport(object):
             for entry in self.entries:
                 label = STATUS_LABELS.get(entry["status"], entry["status"].upper())
                 detail = f"  -- {entry['detail']}" if entry["detail"] else ""
-                lines.append(
-                    f"[{label:12}] {entry['name']} ({entry['type']}){detail}"
-                )
+                lines.append(f"[{label:12}] {entry['name']} ({entry['type']}){detail}")
+
+        # --- Actionable checklist -------------------------------------------------
+        resume = self.resume_entries()
+        lines.append("")
+        lines.append("-" * 70)
+        lines.append(f"RESUME — perlu dikerjakan/diulang ({len(resume)} item):")
+        if not resume:
+            lines.append("  (tidak ada — semua sudah beres)")
+        else:
+            for entry in resume:
+                label = STATUS_LABELS.get(entry["status"], entry["status"].upper())
+                lines.append(f"  - [{label}] {entry['name']} ({entry['type']})")
+                if entry["detail"]:
+                    lines.append(f"      {entry['detail']}")
+                if entry["url"]:
+                    lines.append(f"      {entry['url']}")
+
+        done = self.done_entries()
+        done_counts = Counter(e["status"] for e in done)
+        lines.append("")
+        lines.append(f"SKIP — sudah selesai ({len(done)} item):")
+        if done_counts:
+            tally = ", ".join(
+                f"{STATUS_LABELS.get(s, s.upper())}={c}" for s, c in sorted(done_counts.items())
+            )
+            lines.append(f"  {tally}")
+        else:
+            lines.append("  (belum ada)")
 
         lines.append("-" * 70)
         counts = self.counts()
@@ -97,15 +135,18 @@ class CourseReport(object):
             "course_id": self.course_id,
             "generated_at": self.started_at.isoformat(),
             "counts": dict(self.counts()),
+            "resume": self.resume_entries(),
             "entries": self.entries,
         }
 
         json_path = out_dir / f"{stem}.json"
         md_path = out_dir / f"{stem}.md"
+        resume_md_path = out_dir / f"skipera_resume_{self.course.replace('/', '_')}.md"
         json_path.write_text(json.dumps(payload, indent=2))
         md_path.write_text(self._render_markdown())
+        resume_md_path.write_text(self._render_resume_markdown())
 
-        return {"json": str(json_path), "markdown": str(md_path)}
+        return {"json": str(json_path), "markdown": str(md_path), "resume": str(resume_md_path)}
 
     def _render_markdown(self) -> str:
         title = self.course_name or self.course
@@ -119,9 +160,7 @@ class CourseReport(object):
         lines.append("| --- | --- | --- | --- |")
         for entry in self.entries:
             label = STATUS_LABELS.get(entry["status"], entry["status"].upper())
-            lines.append(
-                f"| {label} | {entry['name']} | {entry['type']} | {entry['detail']} |"
-            )
+            lines.append(f"| {label} | {entry['name']} | {entry['type']} | {entry['detail']} |")
         lines.append("")
         counts = self.counts()
         if counts:
@@ -130,4 +169,29 @@ class CourseReport(object):
                 note = STATUS_NOTES.get(status, "")
                 lines.append(f"- {STATUS_LABELS.get(status, status.upper())}: {count} ({note})")
         lines.append("")
+        return "\n".join(lines)
+
+    def _render_resume_markdown(self) -> str:
+        title = self.course_name or self.course
+        resume = self.resume_entries()
+        lines = [f"# Resume Checklist: {title}", ""]
+        lines.append(f"Course slug: `{self.course}`")
+        lines.append(f"Waktu: {self.started_at:%Y-%m-%d %H:%M:%S}")
+        lines.append("")
+        if not resume:
+            lines.append("Tidak ada item yang perlu dikerjakan lagi. Semua sudah beres.")
+            return "\n".join(lines) + "\n"
+
+        lines.append(f"{len(resume)} item perlu dikerjakan/diulang:")
+        lines.append("")
+        for entry in resume:
+            label = STATUS_LABELS.get(entry["status"], entry["status"].upper())
+            box = "x" if entry["status"] in {"passed", "already"} else " "
+            lines.append(f"- [{box}] **[{label}]** {entry['name']} ({entry['type']})")
+            if entry["detail"]:
+                lines.append(f"  - {entry['detail']}")
+            if entry["url"]:
+                lines.append(f"  - <{entry['url']}>")
+        lines.append("")
+        lines.append("Item dengan `MANUAL*` ikut menghitung nilai; `MANUAL` biasanya opsional.")
         return "\n".join(lines)

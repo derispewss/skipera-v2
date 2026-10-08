@@ -165,7 +165,18 @@ Every run writes a per-item summary so you can see exactly what was completed, s
 skipera introduction-psychology --llm --summary-dir ./reports
 ```
 
-This produces `skipera_summary_<slug>.json` and `skipera_summary_<slug>.md`, and prints the same table to the console. Items that need manual work (labs, peer reviews, interactive widgets, etc.) are collected in `skipera_manual_items.json`.
+This produces:
+
+- `skipera_summary_<slug>.json` / `.md` — full per-item table.
+- `skipera_resume_<slug>.md` — an actionable **resume checklist**: which items still need work vs. which are done.
+- `skipera_manual_items.json` — raw payloads of items that need manual work.
+
+The console output ends with two explicit sections:
+
+- **RESUME — perlu dikerjakan/diulang**: items still pending (with a direct URL each), including graded (`MANUAL*`) and optional (`MANUAL`) ones.
+- **SKIP — sudah selesai**: items already done (skipped videos, readings, passed quizzes).
+
+So the summary doubles as your to-do list: work down `RESUME`, and the rest can be skipped on the next run.
 
 ## Debugging unsupported items
 
@@ -289,7 +300,13 @@ Setiap kali dijalankan, Skipera membuat ringkasan per-item: mana video yang di-*
 skipera <slug> --llm --summary-dir ./reports
 ```
 
-Menghasilkan `skipera_summary_<slug>.json` dan `skipera_summary_<slug>.md`. Item yang butuh aksi manual dikumpulkan di `skipera_manual_items.json`.
+Menghasilkan `skipera_summary_<slug>.json` dan `skipera_summary_<slug>.md`, plus `skipera_resume_<slug>.md`. Item yang butuh aksi manual dikumpulkan di `skipera_manual_items.json`.
+
+Di akhir output konsol ada dua bagian:
+- **RESUME — perlu dikerjakan/diulang**: item yang belum beres (masing-masing dengan URL langsung), mencakup yang dinilai (`MANUAL*`) dan opsional (`MANUAL`).
+- **SKIP — sudah selesai**: item yang sudah beres (video di-skip, bacaan, kuis lulus).
+
+Jadi summary ini sekaligus jadi daftar to-do: kerjakan bagian RESUME, sisanya bisa di-skip pada run berikutnya.
 
 #### 4c. Memilih Model & Cek Ketersediaan
 Gunakan `--list-models` untuk melihat model yang benar-benar tersedia (model yang sedang dipakai ditandai `*`):

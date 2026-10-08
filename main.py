@@ -123,10 +123,10 @@ class Skipera(object):
             if raw_type == "lecture":
                 logger.info(item["name"])
                 status = self.watch_item(item, self.get_video_metadata(item["id"]))
-                self.report.add(item["name"], raw_type, status)
+                self.report.add(item["name"], raw_type, status, url=self._item_url(item))
             elif raw_type == "supplement":
                 status = self.read_item(item["id"], raw_type, item["name"])
-                self.report.add(item["name"], raw_type, status)
+                self.report.add(item["name"], raw_type, status, url=self._item_url(item))
             elif raw_type == "ungradedAssignment":
                 self._handle_assessment(item, display_type, "practice/ungraded assessment")
             elif raw_type == "staffGraded":
@@ -134,7 +134,8 @@ class Skipera(object):
             elif raw_type in {"ungradedWidget", "ungradedLti"}:
                 if self._try_reverse_completion(item["id"], raw_type, item["name"]):
                     logger.info(f"Marked as complete via reversed endpoint: {item['name']} ({raw_type})")
-                    self.report.add(item["name"], display_type, "passed", "auto-complete via endpoint")
+                    self.report.add(item["name"], display_type, "passed", "auto-complete via endpoint",
+                                    url=self._item_url(item))
                 else:
                     self._record_manual(item, display_type, reason="widget eksternal")
             elif raw_type == "coach":
@@ -152,12 +153,14 @@ class Skipera(object):
                     )
                     if self._try_reverse_completion(item["id"], raw_type, item["name"]):
                         logger.info(f"Marked as complete: {item['name']} ({display_type})")
-                        self.report.add(item["name"], display_type, "passed", "auto-complete via endpoint")
+                        self.report.add(item["name"], display_type, "passed", "auto-complete via endpoint",
+                                        url=self._item_url(item))
                     else:
                         self._record_manual(item, display_type, reason="interaktif/coach")
                 else:
                     logger.debug(f"Skipping unsupported item type: {raw_type} ({item['name']})")
-                    self.report.add(item["name"], display_type, "manual", "tipe tidak didukung")
+                    self.report.add(item["name"], display_type, "manual", "tipe tidak didukung",
+                                    url=self._item_url(item))
 
         self._finish()
 
@@ -252,12 +255,19 @@ class Skipera(object):
         override = item.get("customDisplayTypenameOverride")
         return override or item["contentSummary"]["typeName"]
 
+    def _item_url(self, item: dict) -> str:
+        """Canonical Coursera URL: /learn/<slug>/<route>/<itemId>/<itemSlug>."""
+        raw_type = item["contentSummary"]["typeName"]
+        route = "coach" if raw_type == "coach" else raw_type
+        slug = item.get("slug", "")
+        return f"https://www.coursera.org/learn/{self.course}/{route}/{item['id']}/{slug}"
+
     def _handle_assessment(self, item: dict, type_name: str, label: str) -> None:
         if not self.llm:
             logger.info(f"Skipping {label} (run with --llm to attempt it).")
             weight = self.graded_weights.get(item["id"], 0)
             detail = "jalankan dengan --llm" + (f" ({weight} pts)" if weight else "")
-            self.report.add(item["name"], type_name, "no_llm", detail)
+            self.report.add(item["name"], type_name, "no_llm", detail, url=self._item_url(item))
             return
 
         logger.info(f"Attempting to solve {label}..")
@@ -267,7 +277,7 @@ class Skipera(object):
         detail = solver.last_error if status == "error" else ""
         if weight and status not in {"passed"}:
             detail = (detail + " " if detail else "") + f"({weight} pts)"
-        self.report.add(item["name"], type_name, status, detail)
+        self.report.add(item["name"], type_name, status, detail, url=self._item_url(item))
         if status in {"failed", "no_llm", "error", "no_attempts"}:
             self.manual_items.append(item)
 
@@ -280,7 +290,7 @@ class Skipera(object):
             status = "manual"
             detail = f"{reason} — opsional/tidak dinilai"
         logger.warning(f"Manual action required for '{item['name']}' ({type_name}). {detail}.")
-        self.report.add(item["name"], type_name, status, detail)
+        self.report.add(item["name"], type_name, status, detail, url=self._item_url(item))
         self.manual_items.append(item)
 
     def _looks_interactive(self, item: dict, type_name: str) -> bool:
@@ -294,6 +304,12 @@ class Skipera(object):
         paths = self.report.save(self.summary_dir)
         logger.info(f"Summary (JSON)    : {paths['json']}")
         logger.info(f"Summary (Markdown): {paths['markdown']}")
+        logger.info(f"Resume checklist  : {paths['resume']}")
+        if self.report.resume_entries():
+            logger.warning(
+                f"{len(self.report.resume_entries())} item perlu di-resume "
+                f"(lihat {paths['resume']})."
+            )
 
         if self.dump_items:
             self._dump_json("skipera_all_items.json", self.all_items)
