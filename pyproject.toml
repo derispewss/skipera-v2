@@ -8,6 +8,9 @@ version = "2.0.0"
 description = "Skipera V2 — skip mandatory Coursera courses in seconds"
 readme = "README.md"
 license = "MIT"
+authors = [
+    { name = "derispewss", email = "derisfirmansyah177@gmail.com" },
+]
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.0",
@@ -22,8 +25,8 @@ dependencies = [
 skipera = "main:main"
 
 [project.urls]
-Homepage = "https://github.com/serv0id/skipera"
-Issues = "https://github.com/serv0id/skipera/issues"
+Homepage = "https://github.com/derispewss/skipera-v2"
+Issues = "https://github.com/derispewss/skipera-v2/issues"
 
 [tool.setuptools]
 py-modules = ["config", "report", "main"]

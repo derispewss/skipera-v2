@@ -63,7 +63,7 @@ If automatic fetching doesn't work, you can manually add your cookies to the con
 }
 ```
 
-To find your cookies, follow the instructions given at https://github.com/serv0id/skipera/issues/1.
+To find your cookies, use the **Application → Cookies → `https://www.coursera.org`** steps described in the tutorial below (step 2).
 
 ## Usage
 
@@ -295,3 +295,7 @@ skipera <slug> --diagnose
 Perintah ini mencetak distribusi tipe item (termasuk `raw -> override`), menandai kandidat dialog/role play, dan menulis `skipera_all_items.json`. Tambahkan `--dump-items` pada run biasa untuk menyimpan payload yang sama.
 
 > **Catatan Mode Kuis (LLM):** AI kadang-kadang bisa memberikan halusinasi (jawaban tak akurat). Anda mungkin mengalami kondisi tidak langsung lulus karena nilai tak cukup, sehingga butuh retake atau pengecekan mandiri. Selain itu per tugas rata-rata menghabiskan ~5000 input tokens.
+
+## Lisensi
+
+MIT License — Copyright (c) 2026 derispewss. Lihat file [LICENSE](LICENSE) untuk teks lengkapnya.
