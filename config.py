@@ -53,8 +53,8 @@ PROVIDER_PRESETS = {
     "openai": "https://api.openai.com/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "perplexity": "https://api.perplexity.ai",
-    "local": "http://192.168.18.11:8045/v1",
-    "9router": "http://192.168.18.11:8045/v1",
+    "local": "http://127.0.0.1:8045/v1",
+    "9router": "http://127.0.0.1:8045/v1",
 }
 
 

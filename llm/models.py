@@ -23,10 +23,24 @@ def list_gemini_models(api_key: str) -> list:
 
 def list_openai_models(base_url: str, api_key: str = "") -> list:
     """Return model ids from an OpenAI-compatible /models endpoint."""
+    from urllib.parse import urlsplit, urlunsplit
+
     headers = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    response = requests.get(f"{base_url.rstrip('/')}/models", headers=headers, timeout=30)
+
+    url = f"{base_url.rstrip('/')}/models"
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+    except requests.exceptions.ConnectionError:
+        parts = urlsplit(url)
+        if parts.hostname in (None, "127.0.0.1", "localhost"):
+            raise
+        netloc = f"127.0.0.1:{parts.port}" if parts.port else "127.0.0.1"
+        alt = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+        logger.warning(f"Tidak bisa konek ke {url}; mencoba {alt} ...")
+        response = requests.get(alt, headers=headers, timeout=30)
+
     response.raise_for_status()
     payload = response.json()
     return sorted(item["id"] for item in payload.get("data", []) if item.get("id"))

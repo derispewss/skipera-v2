@@ -128,7 +128,7 @@ Skipera can talk to any OpenAI-compatible `/chat/completions` endpoint: OpenRout
 
 ```bash
 LLM_PROVIDER=openai            # gemini | openai | openrouter | 9router | local | perplexity
-LLM_BASE_URL=http://192.168.18.11:8045/v1
+LLM_BASE_URL=http://127.0.0.1:8045/v1
 LLM_API_KEY=                   # usually empty for a local router
 LLM_MODEL=gemini-3.8-flash-tiered
 ```
@@ -148,7 +148,7 @@ model is marked with `*`:
 
 ```bash
 skipera --list-models --provider gemini
-skipera --list-models --base-url http://192.168.18.11:8045/v1
+skipera --list-models --base-url http://127.0.0.1:8045/v1
 skipera <slug> --llm --provider gemini --model gemini-2.5-flash
 ```
 
@@ -262,7 +262,7 @@ Skipera mendukung **semua endpoint yang kompatibel dengan OpenAI** (`/chat/compl
 
 ```bash
 LLM_PROVIDER=openai            # gemini | openai | openrouter | 9router | local | perplexity
-LLM_BASE_URL=http://192.168.18.11:8045/v1
+LLM_BASE_URL=http://127.0.0.1:8045/v1
 LLM_API_KEY=                   # biasanya kosong untuk router lokal
 LLM_MODEL=gemini-3.8-flash-tiered
 ```
@@ -271,7 +271,7 @@ Atau ganti tanpa mengedit file, langsung dari terminal:
 
 ```bash
 # Pakai proxy lokal
-skipera <slug> --llm --base-url http://192.168.18.11:8045/v1 --model gemini-3.8-flash-tiered
+skipera <slug> --llm --base-url http://127.0.0.1:8045/v1 --model gemini-3.8-flash-tiered
 
 # Pakai OpenRouter
 skipera <slug> --llm --provider openrouter --model google/gemini-2.0-flash-001 --api-key sk-or-...
@@ -280,7 +280,7 @@ skipera <slug> --llm --provider openrouter --model google/gemini-2.0-flash-001 -
 skipera <slug> --llm --provider gemini
 ```
 
-> **Tips:** jika proxy hanya *bind* ke localhost, gunakan `--base-url http://127.0.0.1:8045/v1`.
+> **Tips:** proxy lokal (Antigravity/9router) umumnya hanya *bind* ke `127.0.0.1`. Gunakan `--base-url http://127.0.0.1:8045/v1`. Kalau tetap memakai IP LAN (mis. `192.168.x.x`) dan koneksinya ditolak, Skipera otomatis mencoba `127.0.0.1` sebagai fallback.
 
 #### 4b. Ringkasan (Summary) Hasil Course
 Setiap kali dijalankan, Skipera membuat ringkasan per-item: mana video yang di-*skip*, materi yang dibaca, kuis yang lulus, dan item yang butuh tindakan manual.
@@ -296,7 +296,7 @@ Gunakan `--list-models` untuk melihat model yang benar-benar tersedia (model yan
 
 ```bash
 skipera --list-models --provider gemini
-skipera --list-models --base-url http://192.168.18.11:8045/v1
+skipera --list-models --base-url http://127.0.0.1:8045/v1
 skipera <slug> --llm --provider gemini --model gemini-2.5-flash
 ```
 

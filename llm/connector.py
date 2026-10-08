@@ -88,6 +88,33 @@ class OpenAICompatibleConnector(object):
             return self.base_url
         return f"{self.base_url}/chat/completions"
 
+    @staticmethod
+    def _loopback_url(url: str) -> str:
+        """Mirror a URL onto 127.0.0.1 keeping scheme/port/path."""
+        from urllib.parse import urlsplit, urlunsplit
+
+        parts = urlsplit(url)
+        if parts.hostname in (None, "127.0.0.1", "localhost"):
+            return ""
+        netloc = f"127.0.0.1:{parts.port}" if parts.port else "127.0.0.1"
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+    def _post(self, payload: dict, headers: dict) -> requests.Response:
+        url = self._chat_completions_url()
+        try:
+            return requests.post(url, json=payload, headers=headers, timeout=self.timeout)
+        except requests.exceptions.ConnectionError:
+            # Local routers often bind to loopback only, so the machine's own
+            # LAN IP (e.g. 192.168.x.x) refuses the connection. Retry on 127.0.0.1.
+            alt = self._loopback_url(url)
+            if not alt:
+                raise
+            logger.warning(
+                f"Tidak bisa konek ke {url}; mencoba {alt} "
+                "(proxy lokal biasanya hanya listen di localhost)..."
+            )
+            return requests.post(alt, json=payload, headers=headers, timeout=self.timeout)
+
     def _request(self, questions: dict, use_json_mode: bool) -> requests.Response:
         payload = {
             "model": self.model,
@@ -106,12 +133,7 @@ class OpenAICompatibleConnector(object):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        return requests.post(
-            self._chat_completions_url(),
-            json=payload,
-            headers=headers,
-            timeout=self.timeout,
-        )
+        return self._post(payload, headers)
 
     def get_response(self, questions: dict) -> dict:
         logger.debug(

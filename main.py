@@ -462,7 +462,7 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=10
 @click.option("-p", "--provider", default="",
               help="LLM provider: gemini, openai, openrouter, 9router, local, perplexity.")
 @click.option("--base-url", default="",
-              help="OpenAI-compatible base URL, e.g. http://192.168.18.11:8045/v1")
+              help="OpenAI-compatible base URL, e.g. http://127.0.0.1:8045/v1")
 @click.option("-m", "--model", default="", help="Model name to use (see --list-models).")
 @click.option("--api-key", default="", help="API key for the endpoint (optional for local routers).")
 @click.option("--list-models", "show_models", is_flag=True,
