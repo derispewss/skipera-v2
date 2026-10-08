@@ -13,6 +13,7 @@ STATUS_LABELS = {
     "no_attempts": "NO_ATTEMPTS",
     "no_llm": "NO_LLM",
     "manual": "MANUAL",
+    "manual_graded": "MANUAL*",
     "error": "ERROR",
     "already": "ALREADY_DONE",
 }
@@ -27,6 +28,7 @@ STATUS_NOTES = {
     "no_attempts": "tidak ada sisa attempt",
     "no_llm": "butuh konfigurasi LLM",
     "manual": "perlu tindakan manual (belum didukung)",
+    "manual_graded": "perlu tindakan manual — MENGHITUNG NILAI",
     "error": "gagal diproses",
     "already": "sudah selesai sebelumnya",
 }

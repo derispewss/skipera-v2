@@ -22,6 +22,7 @@ Graded assessments are completed with the assistance of an LLM API.
 ```bash
 conda env create -f environment.yml
 conda activate skipera
+playwright install chromium   # only needed for the --capture (Role Play/Dialogue) mode
 ```
 
 ### pip
@@ -101,6 +102,18 @@ Skipera classifies each course item by its `contentSummary.typeName`:
 > (`isGradedRolePlaysEnabled`, `enableRolePlayVoiceGA`), and are not reachable via
 > the public REST endpoints skipera uses, so they stay manual.
 
+> **Can the manual items be automated?** Mostly no, and usually unnecessary:
+> - `discussionPrompt` and `coach` (Role Play / Dialogue) are **not graded** in
+>   typical courses — completing them is optional, so automating them rarely matters.
+> - `gradedProgramming` **is graded** (e.g. ~70% of the HPC course), but it needs
+>   running code inside an external lab workspace (Jupyter / RStudio / VS Code / Linux),
+>   so it cannot be automated generically.
+> - `peerGraded` / `peerReview` and `gradedLti` similarly require human/lab work.
+>
+> Skipera now distinguishes manual items: `MANUAL*` = counts toward your grade,
+> `MANUAL` = optional (not graded). It derives this from the course's
+> `passableLessonElements` weights.
+
 ## LLM Support
 
 If you wish to solve graded assignments automatically, add your Perplexity or Gemini API key to the config file and use the `--llm` flag:
@@ -166,6 +179,27 @@ This prints the type distribution, flags dialog/role-play candidates, and writes
 
 Currently, only the single-choice and multiple-choice objective questions are supported in this mode. Note that you might
 not always achieve passing marks due to the LLM hallucinating sometimes.
+
+## Browser-assisted capture (Playwright) for Role Play / Dialogue / discussion
+
+These items are rendered by a JS SPA and talk to endpoints that only exist for a
+logged-in session, so they cannot be driven by plain HTTP. Instead of blindly
+guessing DOM selectors, Skipera ships a **local Playwright recorder**: it opens a
+real browser (persistent profile), you do the item **once** by hand, and it records
+every `/api` + GraphQL request. From that capture the exact endpoint can be turned
+into a stable HTTP client (no browser needed afterwards).
+
+```bash
+# 1. one-time install
+pip install playwright && playwright install chromium
+
+# 2. record a Role Play / Dialogue / discussion item
+skipera --capture "https://www.coursera.org/learn/<slug>/coach/<itemId>/<slug>" --capture-out capture.json
+#    (login in the opened browser if asked, finish the item, then press Enter)
+```
+
+`capture.json` lists the `method`, `url` and `post_data` of every relevant request.
+Send it over and the endpoints get wired into Skipera as direct API calls.
 
 ---
 
@@ -284,6 +318,27 @@ Saat menjalankan `--llm`, Skipera memvalidasi model yang dipilih dan memberi per
 | `peerGraded` / `peerReview` / `phasedPeer` | penilaian sejawat | **manual** |
 
 > **Hasil riset:** "Role Play" dan "Dialogue" bukan tipe tersendiri — keduanya bertipe `coach` (fitur Coursera Coach) dengan `customDisplayTypenameOverride` `Role Play` / `Dialogue`. Aktivitas ini berupa percakapan AI di rute `/learn/<slug>/coach/<itemId>/<slug>`, di balik feature flag (`isGradedRolePlaysEnabled`, `enableRolePlayVoiceGA`), dan tidak dapat diakses lewat endpoint REST publik yang dipakai Skipera — sehingga tetap **manual**. Tugas pemrograman (`gradedProgramming`) juga manual karena harus menjalankan/menyimpan kode di environment lab.
+
+> **Apakah item manual bisa diotomatiskan?** Umumnya tidak, dan sering tidak perlu:
+> - `discussionPrompt` dan `coach` (Role Play / Dialogue) **tidak dinilai** di course umum — mengerjakannya opsional, jadi otomatisasi nyaris tak berdampak.
+> - `gradedProgramming` **dinilai** (contoh ~70% nilai course HPC), tapi butuh menjalankan kode di lab eksternal (Jupyter / RStudio / VS Code / Linux) sehingga tidak bisa digeneralisasi.
+> - `peerGraded` / `peerReview` dan `gradedLti` juga butuh pekerjaan manusia/lab.
+>
+> Skipera kini membedakan item manual: **`MANUAL*`** = ikut menghitung nilai, **`MANUAL`** = opsional (tidak dinilai), diambil dari bobot `passableLessonElements` course. Gunakan `--diagnose` untuk melihat bobot tiap item.
+
+#### 4f. Mode Playwright (rekam API Role Play / Dialogue / diskusi)
+Item coach/discussion dirender oleh SPA dan endpoint-nya hanya muncul saat sudah login, jadi tidak bisa lewat HTTP biasa. Daripada menebak selector DOM, Skipera menyediakan **perekam Playwright lokal**: membuka browser asli (profil persisten), Anda kerjakan itemnya **sekali** secara manual, dan semua request `/api` + GraphQL direkam. Dari rekaman itu, endpoint-nya bisa diubah menjadi pemanggilan API langsung yang stabil.
+
+```bash
+# install sekali
+pip install playwright && playwright install chromium
+
+# rekam satu item Role Play / Dialogue / diskusi
+skipera --capture "https://www.coursera.org/learn/<slug>/coach/<itemId>/<slug>" --capture-out capture.json
+#   (login di browser yang terbuka bila diminta, selesaikan itemnya, lalu tekan Enter)
+```
+
+File `capture.json` berisi `method`, `url`, dan `post_data` tiap request. Kirim isinya agar endpoint tersebut dipasang sebagai pemanggilan API langsung di Skipera.
 
 #### 4e. Men-debug Item yang Belum Didukung
 Untuk melihat tipe setiap item **tanpa mengubah apa pun** di akun Anda:

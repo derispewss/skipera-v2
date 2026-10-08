@@ -24,3 +24,9 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Tooling artifacts
+.playwright-mcp/
+skipera_*.json
+skipera_*.md
+reports/

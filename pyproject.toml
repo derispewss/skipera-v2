@@ -24,10 +24,13 @@ dependencies = [
 [project.scripts]
 skipera = "main:main"
 
+[project.optional-dependencies]
+browser = ["playwright>=1.40"]
+
 [project.urls]
 Homepage = "https://github.com/derispewss/skipera-v2"
 Issues = "https://github.com/derispewss/skipera-v2/issues"
 
 [tool.setuptools]
-py-modules = ["config", "report", "main"]
+py-modules = ["config", "report", "main", "capture"]
 packages = ["assessment", "llm", "watcher"]

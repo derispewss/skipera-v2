@@ -6,3 +6,6 @@ dependencies:
   - pip
   - pip:
       - -e .
+      # Playwright powers the --capture recorder (Role Play / Dialogue / discussion).
+      # After creating the env, run: playwright install chromium
+      - playwright

@@ -47,6 +47,7 @@ class Skipera(object):
         self.report = CourseReport(course)
         self.manual_items = []
         self.all_items = []
+        self.graded_weights = {}
         if not self.get_userid():
             self.refresh_cookies()
             if not self.get_userid():
@@ -104,6 +105,7 @@ class Skipera(object):
         course_name = r["elements"][0].get("name", "")
         self.report.course_id = self.course_id
         self.report.course_name = course_name
+        self._index_graded_items(r)
 
         logger.info("Course ID: " + self.course_id)
         logger.info("Number of Modules: " + str(len(r["linked"]["onDemandCourseMaterialModules.v1"])))
@@ -137,10 +139,9 @@ class Skipera(object):
                     self._record_manual(item, display_type, reason="widget eksternal")
             elif raw_type == "coach":
                 self._handle_coach(item, display_type)
-            elif raw_type == "discussionPrompt":
+            elif raw_type in {"discussionPrompt", "gradedDiscussionPrompt"}:
                 logger.info(f"Discussion prompt: '{item['name']}' (perlu posting di forum).")
-                self.report.add(item["name"], display_type, "manual", "posting diskusi forum (opsional)")
-                self.manual_items.append(item)
+                self._record_manual(item, display_type, reason="posting di forum diskusi")
             elif raw_type in MANUAL_ITEM_TYPES:
                 self._record_manual(item, display_type, reason=self._manual_reason(raw_type))
             else:
@@ -164,23 +165,43 @@ class Skipera(object):
         """Coursera Coach activities (Role Play / Dialogue) need live AI interaction."""
         label = item.get("customDisplayTypenameOverride") or "Coach"
         logger.warning(
-            f"Coursera Coach: '{item['name']}' ({label}). Ini aktivitas Role Play/Dialogue "
-            "berbasis AI yang belum bisa diselesaikan otomatis — perlu interaksi manual."
+            f"Coursera Coach: '{item['name']}' ({label}). Aktivitas Role Play/Dialogue "
+            "berbasis AI; belum bisa otomatis."
         )
-        self.report.add(item["name"], f"coach ({label})", "manual",
-                        "Coursera Coach – perlu interaksi AI manual")
-        self.manual_items.append(item)
+        self._record_manual(
+            item, f"coach ({label})",
+            reason="Coursera Coach (Role Play/Dialogue) — perlu interaksi AI")
 
     @staticmethod
     def _manual_reason(raw_type: str) -> str:
         return {
             "gradedProgramming": "programming assignment / lab (jalankan kode)",
+            "programming": "programming / lab (jalankan kode)",
+            "notebook": "notebook / lab (jalankan kode)",
             "gradedLti": "lab eksternal (LTI) – perlu dijalankan manual",
             "peerGraded": "peer review – perlu dinilai manual",
             "peerReview": "peer review – perlu dinilai manual",
             "phasedPeer": "peer review bertahap",
+            "gradedPeer": "peer review – perlu dinilai manual",
+            "teammateReview": "review rekan tim",
             "appItem": "aplikasi eksternal",
+            "exam": "ujian – perlu dikerjakan manual",
+            "wiseFlow": "ujian terproktor (WiseFlow)",
         }.get(raw_type, "tidak auto-solvable")
+
+    def _index_graded_items(self, materials: dict) -> None:
+        """Map item id -> point weight for items that count toward the course grade."""
+        self.graded_weights = {}
+        linked = materials.get("linked", {}) or {}
+        for element in linked.get("onDemandCourseMaterialPassableLessonElements.v1", []) or []:
+            element_id = element.get("id", "")
+            if element_id.startswith("item~"):
+                item_id = element_id.split("~", 1)[1]
+                weight = element.get("gradingWeight") or 0
+                if weight:
+                    self.graded_weights[item_id] = weight
+        if self.graded_weights:
+            logger.debug(f"Indexed {len(self.graded_weights)} graded items.")
 
     def _diagnose_items(self, items: list) -> None:
         """Read-only: list every item and its type so unsupported ones can be studied."""
@@ -199,10 +220,22 @@ class Skipera(object):
         for type_name, count in sorted(by_type.items(), key=lambda kv: (-kv[1], kv[0])):
             logger.info(f"  {count:>3}  {type_name}")
 
-        logger.info("Items (type | locked | name):")
+        logger.info("Items (type | graded pts | locked | name):")
         for type_name, item_id, name, has_override, locked in rows:
             lock = "LOCKED " if locked else ""
-            logger.info(f"  {lock}{type_name} | {name}  ({item_id})")
+            pts = self.graded_weights.get(item_id)
+            ptxt = f"{pts} pts | " if pts else ""
+            logger.info(f"  {lock}{type_name} | {ptxt}{name}  ({item_id})")
+
+        if self.graded_weights:
+            total = sum(self.graded_weights.values())
+            graded_types = {}
+            for item in items:
+                if item["id"] in self.graded_weights:
+                    t = item["contentSummary"]["typeName"]
+                    graded_types[t] = graded_types.get(t, 0) + 1
+            logger.info(f"Graded items: {len(self.graded_weights)} ({total} pts) -> {graded_types}")
+            logger.info("  (item yang dinilai inilah yang wajib dikerjakan untuk lulus)")
 
         interactive = [row for row in rows if self._looks_interactive(
             {"name": row[2], "slug": ""}, row[0])]
@@ -222,23 +255,32 @@ class Skipera(object):
     def _handle_assessment(self, item: dict, type_name: str, label: str) -> None:
         if not self.llm:
             logger.info(f"Skipping {label} (run with --llm to attempt it).")
-            self.report.add(item["name"], type_name, "no_llm", "jalankan dengan --llm")
+            weight = self.graded_weights.get(item["id"], 0)
+            detail = "jalankan dengan --llm" + (f" ({weight} pts)" if weight else "")
+            self.report.add(item["name"], type_name, "no_llm", detail)
             return
 
         logger.info(f"Attempting to solve {label}..")
         solver = GradedSolver(self.session, self.course_id, item["id"], self.llm_settings)
         status = solver.solve()
+        weight = self.graded_weights.get(item["id"], 0)
         detail = solver.last_error if status == "error" else ""
+        if weight and status not in {"passed"}:
+            detail = (detail + " " if detail else "") + f"({weight} pts)"
         self.report.add(item["name"], type_name, status, detail)
         if status in {"failed", "no_llm", "error", "no_attempts"}:
             self.manual_items.append(item)
 
     def _record_manual(self, item: dict, type_name: str, reason: str = "tidak auto-solvable") -> None:
-        logger.warning(
-            f"Manual action required for '{item['name']}' ({type_name}). "
-            "This item type is not auto-solvable by skipera."
-        )
-        self.report.add(item["name"], type_name, "manual", reason)
+        weight = self.graded_weights.get(item["id"], 0)
+        if weight:
+            status = "manual_graded"
+            detail = f"{reason} — DINILAI {weight} pts"
+        else:
+            status = "manual"
+            detail = f"{reason} — opsional/tidak dinilai"
+        logger.warning(f"Manual action required for '{item['name']}' ({type_name}). {detail}.")
+        self.report.add(item["name"], type_name, status, detail)
         self.manual_items.append(item)
 
     def _looks_interactive(self, item: dict, type_name: str) -> bool:
@@ -428,12 +470,15 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=10
 @click.option("--summary-dir", default="", help="Directory for the summary/report files.")
 @click.option("--dump-items", is_flag=True, help="Dump every course item payload (debug).")
 @click.option("--diagnose", is_flag=True, help="Read-only: list course item types and exit.")
+@click.option("--capture", "capture_url", default="",
+              help="Playwright recorder: open URL, record /api calls, and exit (for coach/discussion).")
+@click.option("--capture-out", default="skipera_capture.json", help="Output file for --capture.")
 @click.option("--log-level", type=click.Choice(["debug", "info", "warning", "error"]),
               default="info", show_default=True, help="Console log verbosity.")
 @click.version_option(package_name="skipera", prog_name="skipera")
 def main(slug: str, llm: bool, provider: str, base_url: str, model: str, api_key: str,
          show_models: bool, summary_dir: str, dump_items: bool, diagnose: bool,
-         log_level: str) -> None:
+         capture_url: str, capture_out: str, log_level: str) -> None:
     """Skipera — skip mandatory Coursera videos, readings and assessments.
 
     \b
@@ -444,9 +489,15 @@ def main(slug: str, llm: bool, provider: str, base_url: str, model: str, api_key
       skipera <slug> --llm --base-url http://192.168.18.11:8045/v1 --model gemini-3.8-flash-tiered
       skipera --list-models --provider openrouter
       skipera <slug> --diagnose
+      skipera --capture https://www.coursera.org/learn/<slug>/coach/<itemId>/<slug>
     """
     logger.remove()
     logger.add(sys.stderr, level=log_level.upper(), colorize=True)
+
+    if capture_url:
+        from capture import run_capture
+        run_capture(capture_url, capture_out)
+        return
 
     llm_settings = resolve_llm_settings(provider, base_url, model, api_key)
 
