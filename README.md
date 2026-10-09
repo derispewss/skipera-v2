@@ -44,6 +44,22 @@ The project uses a **flat layout** — `main.py`, `config.py`, `report.py` and t
 
 On first run, skipera creates a config file at `~/.skipera/config.json`.
 
+### Environment file (`.env`)
+
+The quickest way to configure everything is a `.env` file. A ready-to-use template is committed in the repo:
+
+```bash
+cp .env.example .env
+```
+
+Then open `.env` and fill in just two things:
+
+- `CAUTH` — your Coursera session cookie (see below), and
+- either `GEMINI_API_KEY` (Gemini), **or** the local AI block
+  (`LLM_PROVIDER=local`, `LLM_BASE_URL=http://127.0.0.1:8045/v1`, `LLM_MODEL=...`).
+
+That's it — `.env` is gitignored, `.env.example` is the shared template.
+
 ### Cookies (automatic)
 
 If you're logged into Coursera in your browser (Chrome, Firefox, or Edge), skipera will automatically fetch the required cookies. Just run the command and it handles the rest. Expired cookies are also re-fetched automatically.
@@ -246,7 +262,15 @@ Agar program ini dapat berinteraksi dengan akun Coursera Anda (menandai kemajuan
 3. Lakukan **Inspect Element** (klik kanan sembarang pada halaman > **Inspect**, atau tekan tombol **F12**).
 4. Di panel Inspect Element, navigasi ke tab **Application**.
 5. Pada menu navigasi di sebelah kiri, rentangkan menu **Cookies**, kemudian pilih **`https://www.coursera.org`**.
-6. Cari *Name* **`CAUTH`** dan salin *Value*-nya, lalu isikan pada file `.env` atau `~/.skipera/config.json`.
+6. Cari *Name* **`CAUTH`** dan salin *Value*-nya.
+
+Salin template env lalu isi cookie + API key:
+
+```bash
+cp .env.example .env
+# edit .env -> isi CAUTH=... dan GEMINI_API_KEY=...
+# (atau uncomment blok AI lokal: LLM_PROVIDER=local, LLM_BASE_URL=http://127.0.0.1:8045/v1, LLM_MODEL=...)
+```
 
 > **Tips Otomatis:** Pada beberapa kasus, Skipera dapat mendeteksi Cookie secara otomatis pada *browser* yang sedang login akun Coursera. Cukup tutup *browser* Chrome (jika di Windows) dan jalankan *script*.
 
