@@ -219,6 +219,8 @@ skipera --capture "https://www.coursera.org/learn/<slug>/coach/<itemId>/<slug>" 
 `capture.json` lists the `method`, `url` and `post_data` of every relevant request.
 Send it over and the endpoints get wired into Skipera as direct API calls.
 
+MAMAH AKU MAU JADI CONTRIBUTOR
+
 ## License
 
 MIT License — Copyright (c) 2026 derispewss. See the [LICENSE](LICENSE) file for the full text.
