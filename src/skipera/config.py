@@ -57,6 +57,11 @@ PROVIDER_PRESETS = {
     "9router": "http://127.0.0.1:8045/v1",
 }
 
+# Providers whose preset URL is a fixed public endpoint. For these the preset is
+# authoritative. Self-hosted providers (9router, local, ...) are user-specific, so
+# an explicitly configured LLM_BASE_URL must win over the bundled default.
+CANONICAL_PRESET_PROVIDERS = {"openai", "openrouter", "perplexity"}
+
 
 def fetch_browser_cookies() -> dict:
     try:
@@ -210,7 +215,14 @@ def resolve_llm_settings(provider: str = "", base_url: str = "", model: str = ""
         resolved_base = base_url
     elif provider:
         resolved_provider = provider
-        resolved_base = PROVIDER_PRESETS.get(provider, LLM_BASE_URL)
+        preset = PROVIDER_PRESETS.get(provider, "")
+        if provider in CANONICAL_PRESET_PROVIDERS:
+            # Fixed public endpoint (openai/openrouter/perplexity): preset wins.
+            resolved_base = preset or LLM_BASE_URL
+        else:
+            # Self-hosted provider (9router/local/...): the user's own URL wins,
+            # otherwise fall back to the bundled localhost default.
+            resolved_base = LLM_BASE_URL or preset
     else:
         resolved_provider = LLM_PROVIDER
         resolved_base = LLM_BASE_URL

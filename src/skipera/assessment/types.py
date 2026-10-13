@@ -18,12 +18,15 @@ WHITELISTED_QUESTION_TYPES = [
 
 QUESTION_TYPE_MAP = {
     "Submission_CheckboxQuestion": ["checkboxResponse", "CHECKBOX"],
-    "Submission_CheckboxReflectQuestion": ["checkboxReflectResponse", "CHECKBOX_REFLECT"],
+    # Reflect variants are sent with the SAME base response field: the
+    # SaveResponses input union (Submission_QuestionResponseInputUnion) has no
+    # *ReflectResponse member, so <base>ReflectResponse is rejected by the server.
+    "Submission_CheckboxReflectQuestion": ["checkboxResponse", "CHECKBOX_REFLECT"],
     "Submission_CodeExpressionQuestion": ["codeExpressionResponse", "CODE_EXPRESSION"],
     "Submission_FileUploadQuestion": ["fileUploadResponse", "FILE_UPLOAD"],
     "Submission_MathQuestion": ["mathResponse", "MATH"],
     "Submission_MultipleChoiceQuestion": ["multipleChoiceResponse", "MULTIPLE_CHOICE"],
-    "Submission_MultipleChoiceReflectQuestion": ["multipleChoiceReflectResponse", "MULTIPLE_CHOICE_REFLECT"],
+    "Submission_MultipleChoiceReflectQuestion": ["multipleChoiceResponse", "MULTIPLE_CHOICE_REFLECT"],
     "Submission_MultipleFillableBlanksQuestion": ["multipleFillableBlanksResponse", "MULTIPLE_FILLABLE_BLANKS"],
     "Submission_NumericQuestion": ["numericResponse", "NUMERIC"],
     "Submission_OffPlatformQuestion": ["offPlatformResponse", "PLAIN_TEXT"],

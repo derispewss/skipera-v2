@@ -35,7 +35,7 @@ class Skipera(object):
     def __init__(self, course: str, llm: bool, llm_settings: dict = None,
                  summary_dir: str = "", dump_items: bool = False, diagnose: bool = False,
                  knowledge_dir: str = "", no_knowledge: bool = False,
-                 knowledge_lang: str = "en", max_context_chars: int = 40000,
+                 knowledge_lang: str = "en", max_context_chars: int = 8000,
                  refresh_knowledge: bool = False):
         self.user_id = None
         self.course_id = None
@@ -247,11 +247,12 @@ class Skipera(object):
         except Exception as exc:
             logger.debug(f"Gagal menyimpan knowledge '{item['name']}': {exc}")
 
-    def _knowledge_context(self) -> str:
+    def _knowledge_context(self, questions=None) -> str:
         if not self._knowledge_enabled() or not self.llm:
             return ""
         try:
-            return load_knowledge_context(self.knowledge_dir, self.course, self.max_context_chars)
+            return load_knowledge_context(self.knowledge_dir, self.course,
+                                          self.max_context_chars, query=questions)
         except Exception as exc:
             logger.debug(f"Gagal memuat knowledge context: {exc}")
             return ""
@@ -376,7 +377,10 @@ class Skipera(object):
         logger.info(f"Attempting to solve {label}..")
         context = self._knowledge_context()
         solver = GradedSolver(self.session, self.course_id, item["id"],
-                              self.llm_settings, knowledge_context=context)
+                              self.llm_settings, knowledge_context=context,
+                              knowledge_dir=self.knowledge_dir,
+                              course_slug=self.course,
+                              max_chars=self.max_context_chars)
         status = solver.solve()
         weight = self.graded_weights.get(item["id"], 0)
         detail = solver.last_grade
@@ -658,8 +662,8 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=10
 @click.option("--no-knowledge", is_flag=True, help="Disable knowledge base collection.")
 @click.option("--knowledge-lang", default="en", show_default=True,
               help="Subtitle language for lecture transcripts.")
-@click.option("--max-context-chars", default=40000, show_default=True, type=int,
-              help="Max knowledge characters injected into quiz LLM prompts.")
+@click.option("--max-context-chars", default=8000, show_default=True, type=int,
+              help="Max knowledge characters (ringkasan) injected into quiz LLM prompts.")
 @click.option("--refresh-knowledge", is_flag=True,
               help="Re-fetch transcripts/readings even if .md files exist.")
 @click.option("--dump-items", is_flag=True, help="Dump every course item payload (debug).")

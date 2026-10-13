@@ -12,12 +12,16 @@ from skipera.llm.connector import build_connector
 
 class GradedSolver(object):
     def __init__(self, session: requests.Session, course_id: str, item_id: str,
-                 llm_settings: dict = None, knowledge_context: str = ""):
+                 llm_settings: dict = None, knowledge_context: str = "",
+                 knowledge_dir=None, course_slug: str = "", max_chars: int = 8000):
         self.session: requests.Session = session
         self.course_id: str = course_id
         self.item_id: str = item_id
         self.llm_settings = llm_settings
         self.knowledge_context = knowledge_context or ""
+        self.knowledge_dir = knowledge_dir
+        self.course_slug = course_slug
+        self.max_chars = max_chars
         self.attempt_id = None
         self.draft_id = None
         self.discarded_questions = []
@@ -35,6 +39,8 @@ class GradedSolver(object):
         and the course still grants attempts.
         """
         state = self.get_state()
+        if not state:
+            return "error"
         percent, earned, maximum = self.grade_info(state)
         if maximum and earned >= maximum:
             self.preexisting_perfect = True
@@ -44,6 +50,8 @@ class GradedSolver(object):
         retry_note = ""
         while True:
             state = self.get_state()
+            if not state:
+                return "error"
 
             if state["allowedAction"] == "RESUME_DRAFT":
                 logger.info("Resuming in-progress attempt...")
@@ -75,6 +83,8 @@ class GradedSolver(object):
                 return "error"
 
             state = self.get_state()
+            if not state:
+                return "error"
             percent, earned, maximum = self.grade_info(state)
             remaining = state["attempts"]["attemptsRemaining"]
             logger.info(f"Nilai: {self.last_grade} | sisa attempt: {remaining}")
@@ -94,6 +104,7 @@ class GradedSolver(object):
     def grade_info(self, state: dict) -> tuple:
         """Returns (percent, earned, maximum) and caches a printable grade."""
         earned, maximum = 0, 0
+        state = state or {}
         try:
             fb = (state.get("feedback") or {}).get("outcome") or {}
             if fb.get("maxScore"):
@@ -104,7 +115,7 @@ class GradedSolver(object):
         if not maximum:
             try:
                 earned = float((state.get("outcome") or {}).get("earnedGrade", 0) or 0)
-            except (TypeError, ValueError):
+            except (AttributeError, TypeError, ValueError):
                 earned = 0
             maximum = 1
         percent = (earned / maximum * 100) if maximum else 0
@@ -175,7 +186,18 @@ class GradedSolver(object):
 
         questions = self.retrieve_questions()
         self.last_questions = questions
+        # Prefer knowledge filtered by the retrieved questions (summarized +
+        # relevance-ranked); fall back to the prebuilt context when unavailable.
         context = self.knowledge_context
+        if self.knowledge_dir and self.course_slug:
+            try:
+                from skipera.knowledge import load_knowledge_context
+                relevant = load_knowledge_context(
+                    self.knowledge_dir, self.course_slug, self.max_chars, query=questions)
+                if relevant:
+                    context = relevant
+            except Exception as exc:
+                logger.debug(f"Gagal memuat knowledge relevan: {exc}")
         if retry_note:
             context = (context + "\n\n" if context else "") + "PREVIOUS ATTEMPT FEEDBACK:\n" + retry_note
         try:
@@ -200,6 +222,9 @@ class GradedSolver(object):
     def get_state(self) -> dict:
         """
         Retrieves the current state of the assessment.
+
+        Returns an empty dict when Coursera answers with the failure variant
+        (e.g. the item is locked or not yet available) instead of raising.
         """
         res = self.session.post(url=GRAPHQL_URL, params={
             "opname": "QueryState"
@@ -212,7 +237,20 @@ class GradedSolver(object):
             "query": GET_STATE_QUERY
         }).json()
 
-        return res["data"]["SubmissionState"]["queryState"]
+        data = res.get("data") or {}
+        state = (data.get("SubmissionState") or {}).get("queryState")
+        if isinstance(state, dict) and "allowedAction" in state:
+            return state
+
+        # Failure variant (or null): surface the reason instead of crashing.
+        reasons = res.get("errors") or []
+        if isinstance(state, dict):
+            reasons = reasons or state.get("errors") or []
+        reason = str(reasons)[:300] if reasons else \
+            "state tidak tersedia (item mungkin terkunci/belum tersedia)"
+        self.last_error = f"QueryState gagal: {reason}"
+        logger.error(self.last_error)
+        return {}
 
     def initiate_attempt(self) -> bool:
         """
@@ -481,7 +519,9 @@ class GradedSolver(object):
             }
         }).json()
 
-        outcome = res["data"]["SubmissionState"]["queryState"]["outcome"]
+        state = ((res.get("data") or {}).get("SubmissionState") or {}).get("queryState") or {}
+
+        outcome = state.get("outcome")
 
         if outcome is not None:
             logger.debug(f"Achieved {outcome['earnedGrade']} grade. Passed? {outcome['isPassed']}")

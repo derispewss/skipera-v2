@@ -14,10 +14,10 @@ ANSWER_INSTRUCTIONS = (
 )
 
 CONTEXT_INSTRUCTIONS = (
-    "You are given course material (video transcripts + readings) as the "
-    "knowledge base. Prioritize it when answering: if the material covers "
-    "the question, base your answer on it. Otherwise fall back to general "
-    "knowledge."
+    "You are given summarized course material (condensed video transcripts + "
+    "readings) as the knowledge base. Prioritize the summary when answering: "
+    "if it covers the question, base your answer on it. Otherwise fall back "
+    "to general knowledge."
 )
 
 
