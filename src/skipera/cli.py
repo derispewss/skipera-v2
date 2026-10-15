@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -35,8 +36,9 @@ class Skipera(object):
     def __init__(self, course: str, llm: bool, llm_settings: dict = None,
                  summary_dir: str = "", dump_items: bool = False, diagnose: bool = False,
                  knowledge_dir: str = "", no_knowledge: bool = False,
-                 knowledge_lang: str = "en", max_context_chars: int = 8000,
-                 refresh_knowledge: bool = False):
+                 knowledge_lang: str = "en", max_context_chars: int = 4000,
+                 input_token_budget: int = 5000,
+                 refresh_knowledge: bool = False, short_prompt: bool = False):
         self.user_id = None
         self.course_id = None
         self.base_url = BASE_URL
@@ -53,7 +55,9 @@ class Skipera(object):
         self.no_knowledge = no_knowledge
         self.knowledge_lang = knowledge_lang or "en"
         self.max_context_chars = max_context_chars
+        self.input_token_budget = input_token_budget
         self.refresh_knowledge = refresh_knowledge
+        self.short_prompt = short_prompt
         self._knowledge_order = 0
         self._completion_probe_state = {}
         self.report = CourseReport(course)
@@ -376,11 +380,16 @@ class Skipera(object):
 
         logger.info(f"Attempting to solve {label}..")
         context = self._knowledge_context()
+        if self.short_prompt:
+            os.environ["SKIPERA_SHORT_PROMPT"] = "1"
+        else:
+            os.environ.pop("SKIPERA_SHORT_PROMPT", None)
         solver = GradedSolver(self.session, self.course_id, item["id"],
                               self.llm_settings, knowledge_context=context,
                               knowledge_dir=self.knowledge_dir,
                               course_slug=self.course,
-                              max_chars=self.max_context_chars)
+                              max_chars=self.max_context_chars,
+                              input_token_budget=self.input_token_budget)
         status = solver.solve()
         weight = self.graded_weights.get(item["id"], 0)
         detail = solver.last_grade
@@ -662,10 +671,14 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=10
 @click.option("--no-knowledge", is_flag=True, help="Disable knowledge base collection.")
 @click.option("--knowledge-lang", default="en", show_default=True,
               help="Subtitle language for lecture transcripts.")
-@click.option("--max-context-chars", default=8000, show_default=True, type=int,
-              help="Max knowledge characters (ringkasan) injected into quiz LLM prompts.")
+@click.option("--input-token-budget", default=5000, show_default=True, type=int,
+              help="Target total token INPUT per request (soal + konteks). Konteks knowledge otomatis memakai sisa anggaran setelah payload soal.")
+@click.option("--max-context-chars", default=12000, show_default=True, type=int,
+              help="Ceiling maksimum karakter konteks knowledge; efektif dibatasi otomatis oleh --input-token-budget.")
 @click.option("--refresh-knowledge", is_flag=True,
               help="Re-fetch transcripts/readings even if .md files exist.")
+@click.option("--short-prompt", is_flag=True,
+              help="Trim prompts to 400 chars and options to 100 chars; useful for token-tight runs.")
 @click.option("--dump-items", is_flag=True, help="Dump every course item payload (debug).")
 @click.option("--diagnose", is_flag=True, help="Read-only: list course item types and exit.")
 @click.option("--capture", "capture_url", default="",
@@ -676,8 +689,8 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=10
 @click.version_option(package_name="skipera", prog_name="skipera")
 def main(slug: str, llm: bool, provider: str, base_url: str, model: str, api_key: str,
          show_models: bool, summary_dir: str, knowledge_dir: str, no_knowledge: bool,
-         knowledge_lang: str, max_context_chars: int, refresh_knowledge: bool,
-         dump_items: bool, diagnose: bool,
+         knowledge_lang: str, max_context_chars: int, input_token_budget: int,
+         refresh_knowledge: bool, short_prompt: bool, dump_items: bool, diagnose: bool,
          capture_url: str, capture_out: str, log_level: str) -> None:
     """Skipera — skip mandatory Coursera videos, readings and assessments.
 
@@ -727,7 +740,8 @@ def main(slug: str, llm: bool, provider: str, base_url: str, model: str, api_key
                       summary_dir=summary_dir, dump_items=dump_items, diagnose=diagnose,
                       knowledge_dir=knowledge_dir, no_knowledge=no_knowledge,
                       knowledge_lang=knowledge_lang, max_context_chars=max_context_chars,
-                      refresh_knowledge=refresh_knowledge)
+                      input_token_budget=input_token_budget,
+                      refresh_knowledge=refresh_knowledge, short_prompt=short_prompt)
     skipera.get_course()
 
 

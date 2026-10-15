@@ -13,6 +13,7 @@ WHITELISTED_QUESTION_TYPES = [
     "Submission_TextExactMatchQuestion",
     "Submission_PlainTextQuestion",
     "Submission_TextReflectQuestion",
+    "Submission_RichTextQuestion",
 ]
 
 

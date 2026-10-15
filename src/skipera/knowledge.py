@@ -210,6 +210,14 @@ def _tokenize(text: str) -> list:
     return [w for w in words if len(w) > 2 and w not in STOPWORDS]
 
 
+def _overlap_similarity(a: str, b: str) -> float:
+    """Token-set Jaccard-like overlap: |A∩B| / min(|A|,|B|)."""
+    ta, tb = set(_tokenize(a)), set(_tokenize(b))
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / min(len(ta), len(tb))
+
+
 def _split_sections(content: str) -> list:
     """Split knowledge content into non-empty sections."""
     return [chunk.strip() for chunk in content.split(SECTION_SEPARATOR)
@@ -225,6 +233,47 @@ def _truncate_leading(section: str, limit: int) -> str:
     if nl > len(cut) * 0.5:
         cut = cut[:nl]
     return cut.strip()
+
+
+def _split_passage_units(body: str, cap: int = 600) -> list:
+    """Split a section body into small scorable units.
+
+    Bullets / headings (``-``, ``*``, ``#``) and numbered items
+    (``1.``/``1)``) each become one unit; consecutive prose sentences are
+    grouped until ``cap`` characters. Keeping units small lets the caller
+    pack only the relevant fragments, so less junk burns the token budget.
+    """
+    units: list = []
+    buf: list = []
+    buf_len = 0
+
+    def flush():
+        nonlocal buf, buf_len
+        if buf:
+            merged = re.sub(r"\s+", " ", " ".join(buf)).strip()
+            if merged:
+                units.append(merged)
+            buf, buf_len = [], 0
+
+    for line in (body or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if (stripped.startswith(("-", "*", "#"))
+                or re.match(r"^\d+[.)]", stripped)):
+            flush()
+            units.append(stripped)
+            continue
+        for sent in re.split(r"(?<=[.!?])\s+", stripped):
+            sent = sent.strip()
+            if not sent:
+                continue
+            if buf_len and buf_len + len(sent) > cap:
+                flush()
+            buf.append(sent)
+            buf_len += len(sent) + 1
+    flush()
+    return units
 
 
 def summarize_text(text: str, budget: int = 1500) -> str:
@@ -385,7 +434,7 @@ def _query_to_text(query) -> str:
                 parts.append(str(value.get("prompt", "")))
                 for opt in value.get("options", []) or []:
                     if isinstance(opt, dict):
-                        parts.append(str(opt.get("value", "")))
+                        parts.append(str(opt.get("v") or opt.get("value") or opt.get("text") or ""))
                     else:
                         parts.append(str(opt))
             else:
@@ -444,7 +493,7 @@ def save_knowledge(course_slug: str, knowledge_dir: str | Path, order: int,
 
 
 def load_knowledge_context(knowledge_dir: str | Path, course_slug: str,
-                           max_chars: int = 8000, query=None) -> str:
+                           max_chars: int = 4000, query=None) -> str:
     """Read the summarized knowledge, keeping within ``max_chars``.
 
     The ``.summary.md`` file wins; when it is missing, the full file is
@@ -485,28 +534,78 @@ def load_knowledge_context(knowledge_dir: str | Path, course_slug: str,
     query_tokens = set(_tokenize(_query_to_text(query))) if query else set()
 
     selected = []
+    count_label = f"{len(sections)} section"
     if query_tokens:
-        scored = []
+        # -- passage-level selection: score small units, pack greedily --
+        # Candidate units: (score, order, header, unit, unit_tokens).
+        candidates = []
+        order = 0
         for sec in sections:
-            sec_tokens = _tokenize(sec)
-            if not sec_tokens:
-                continue
-            overlap = len(query_tokens & set(sec_tokens))
-            score = overlap / ((len(sec_tokens) + 1) ** 0.5)
-            scored.append((score, sec))
-        scored.sort(key=lambda pair: pair[0], reverse=True)
+            lines = sec.splitlines()
+            header_count = 3 if len(lines) > 2 and lines[2].startswith("URL:") else 2
+            header = "\n".join(lines[:header_count]).strip()
+            body = "\n".join(lines[header_count:]).strip()
+            first = True
+            for unit in _split_passage_units(body):
+                unit_tokens = _tokenize(unit)
+                if not unit_tokens:
+                    first = False
+                    continue
+                overlap = len(query_tokens & set(unit_tokens))
+                score = overlap / ((len(unit_tokens) + 1) ** 0.5)
+                if first:
+                    score *= 1.15  # first unit of a section: context heading
+                    first = False
+                if re.search(r"\d", unit):
+                    score += 0.5
+                if score > 0:
+                    candidates.append((score, order, header, unit, set(unit_tokens)))
+                order += 1
+
+        candidates.sort(key=lambda c: c[0], reverse=True)
+        pending = list(range(len(candidates)))
+        picked_units = 0
+        accepted_units = []
+        selected_headers = set()
         used = 0
-        for score, sec in scored:
-            if score <= 0:
-                continue
-            if used + len(sec) > max_chars:
-                if not selected:
-                    selected.append(_truncate_leading(sec, max_chars))
-                elif max_chars - used > 0:
-                    selected.append(_truncate_leading(sec, max_chars - used))
+        while pending:
+            progressed = False
+            next_pending = []
+            for i in pending:
+                score, _, header, unit, _ = candidates[i]
+                if score <= 0:
+                    continue  # drop: no relevance
+                if any(_overlap_similarity(unit, prev) > 0.85
+                       for prev in accepted_units):
+                    continue  # dedup: near-duplicate of a picked unit
+                need_header = bool(header) and header not in selected_headers
+                cost = len(unit) + (len(header) + 1 if need_header else 0)
+                if used + cost > max_chars:
+                    next_pending.append(i)  # too big now; maybe smaller fits later
+                    continue
+                if need_header:
+                    selected.append(header)
+                    selected_headers.add(header)
+                    used += len(header) + 1
+                selected.append(unit)
+                accepted_units.append(unit)
+                picked_units += 1
+                used += len(unit) + 1
+                progressed = True
+                if used >= max_chars:
+                    break
+            if not progressed:
+                # Nothing scorable fits in a full pass: fallback only when
+                # nothing was picked yet; keep the head of the best unit.
+                if picked_units == 0 and next_pending and max_chars - used > 0:
+                    top = max((candidates[i] for i in next_pending),
+                              key=lambda c: c[0])
+                    selected.append(_truncate_leading(top[3], max_chars - used))
+                    picked_units += 1
                 break
-            selected.append(sec)
-            used += len(sec)
+            pending = next_pending
+        result = "\n".join(selected).strip()
+        count_label = f"{picked_units} unit"
     else:
         used = 0
         for i in range(len(sections) - 1, -1, -1):
@@ -519,10 +618,10 @@ def load_knowledge_context(knowledge_dir: str | Path, course_slug: str,
                 break
             selected.insert(0, sec)
             used += len(sec)
+        result = SECTION_SEPARATOR.join(selected).strip()
 
-    result = SECTION_SEPARATOR.join(selected).strip()
     logger.info(
         f"Knowledge context: {source_path} ({len(result)} karakter, "
-        f"dari {len(selected)} section, {source_label})"
+        f"{count_label}, {source_label})"
     )
     return result
