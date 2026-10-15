@@ -7,7 +7,7 @@ One Markdown file per course::
 Each lecture/supplement appends one section (deduplicated by ``item_id``).
 The file doubles as the knowledge base for quiz solving: when an
 assessment is solved with ``--llm``, the collected text is injected into
-the LLM prompt so answers are grounded in the actual course material
+the LLM prompt so answers are groun ded in the actual course material
 instead of the model's general knowledge.
 """
 
